@@ -60,20 +60,22 @@ function get_gcc() {
 }
 
 function build_gcc() {
-	export PATH="${SPATH}:${TOPDIR}/loongson.rootfs/bin"
 	rm -rf gcc/build-openbsd-*
-
+ 
+	export PATH="${SPATH}:${TOPDIR}/loongson.rootfs/bin"
 	mkdir -p gcc/build-openbsd-loongson && cd gcc/build-openbsd-loongson
 	../configure --target=mips64el-openbsd --enable-languages=c,c++ --with-sysroot=${TOPDIR}/loongson.rootfs --prefix=${TOPDIR}/loongson.cross
 	make -j`nproc`
 	make install
 	cd ${TOPDIR}
+ 
 	export PATH="${SPATH}:${TOPDIR}/octeon.rootfs/bin"
 	mkdir -p gcc/build-openbsd-octeon && cd gcc/build-openbsd-octeon
 	../configure --target=mips64-openbsd --enable-languages=c,c++ --with-sysroot=${TOPDIR}/octeon.rootfs --prefix=${TOPDIR}/octeon.cross
 	make -j`nproc`
 	make install
 	cd ${TOPDIR}
+ 
 	export PATH="${SPATH}"
 	echo "You can use the mips64(el)-openbsd-gcc now by"
 	echo "   export PATH=\$PATH:${TOPDIR}/octeon.rootfs/bin"

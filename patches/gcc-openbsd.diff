@@ -1,0 +1,205 @@
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index eba69a463be..965431850d7 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -125,6 +125,8 @@
+ #			files, which should be postfixed by an include_next.
+ #  use_gcc_tgmath	If set, add tgmath.h to the list of used header
+ #			files.
++#  use_gcc_stdatomic	If set, add stdatomic.h to the list of used header
++#			files.
+ #
+ #  use_gcc_stdint	If "wrap", install a version of stdint.h that
+ #			wraps the system's copy for hosted compilations;
+@@ -209,6 +211,7 @@ extra_headers=
+ user_headers_inc_next_pre=
+ user_headers_inc_next_post=
+ use_gcc_tgmath=yes
++use_gcc_stdatomic=no
+ use_gcc_stdint=none
+ extra_programs=
+ extra_objs=
+@@ -2591,6 +2594,24 @@ mips*-img-elf*)
+ 	with_arch_32="mips32r6"
+ 	with_arch_64="mips64r6"
+ 	;;
++mips*-*-openbsd*)
++	tm_defines="${tm_defines} OBSD_HAS_DECLARE_FUNCTION_NAME OBSD_HAS_DECLARE_OBJECT OBSD_HAS_CORRECT_SPECS"
++	target_cpu_default="MASK_ABICALLS"
++	tm_file="elfos.h mips/mips.h openbsd.h openbsd-stdint.h openbsd-libpthread.h mips/elf.h mips/openbsd.h"
++	extra_options="${extra_options} openbsd.opt"
++	with_arch_32="mips1"
++	with_arch_64="mips3"
++	use_gcc_stdatomic=yes
++	case ${target} in
++	mips64*-*-openbsd*)
++	    default_mips_abi=64
++	esac
++	case ${target} in
++	mips*el-*-openbsd*)
++	    tm_defines="${tm_defines} TARGET_ENDIAN_DEFAULT=0";;
++	*)  tm_defines="${tm_defines} TARGET_ENDIAN_DEFAULT=MASK_BIG_ENDIAN";;
++	esac
++	;;
+ mips*-sde-elf*)
+ 	tm_file="elfos.h newlib-stdint.h ${tm_file} mips/elf.h mips/n32-elf.h mips/sde.h"
+ 	tmake_file="mips/t-sde"
+diff --git a/gcc/config/mips/openbsd.h b/gcc/config/mips/openbsd.h
+new file mode 100644
+index 00000000000..bceaebb1bf1
+--- /dev/null
++++ b/gcc/config/mips/openbsd.h
+@@ -0,0 +1,108 @@
++/* Configuration for  a MIPS ABI32 OpenBSD target.
++   Copyright (C) 1999, 2003, 2004, 2007, 2008, 2009, 2010, 2011
++   Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/* Definitions needed for OpenBSD, to avoid picking mips 'defaults'.  */
++
++/* GAS must know this.  */
++#undef SUBTARGET_ASM_SPEC
++#define SUBTARGET_ASM_SPEC "%{fPIC|fPIE:-KPIC}"
++
++/* CPP specific OpenBSD specs.  */
++#undef SUBTARGET_CPP_SPEC
++#define SUBTARGET_CPP_SPEC OBSD_CPP_SPEC
++
++/* Needed for ELF (inspired by netbsd-elf).  */
++#undef LOCAL_LABEL_PREFIX
++#define LOCAL_LABEL_PREFIX	"."
++
++/* mips assembler uses .set for arcane purposes.  __attribute__((alias))
++   and friends won't work until we get recent binutils with .weakext
++	support.  */
++#undef SET_ASM_OP
++
++#define TARGET_OS_CPP_BUILTINS()			\
++    do {						\
++	builtin_define ("__unix__");			\
++	builtin_define ("__SYSTYPE_BSD__");		\
++	builtin_define ("__NO_LEADING_UNDERSCORES__");	\
++	builtin_define ("__GP_SUPPORT__");		\
++	builtin_define ("__OpenBSD__");			\
++	builtin_assert ("system=unix");			\
++	builtin_assert ("system=OpenBSD");		\
++} while (0)
++
++/* Layout of source language data types.  */
++
++/* This must agree with <machine/ansi.h>.  */
++#undef SIZE_TYPE
++#define SIZE_TYPE "long unsigned int"
++
++#undef PTRDIFF_TYPE
++#define PTRDIFF_TYPE "long int"
++
++#undef WCHAR_TYPE
++#define WCHAR_TYPE "int"
++
++#undef WCHAR_TYPE_SIZE
++#define WCHAR_TYPE_SIZE 32
++
++#undef WINT_TYPE
++#define WINT_TYPE "int"
++
++/* Controlling the compilation driver.  */
++
++/* LINK_SPEC appropriate for OpenBSD:  support for GCC options
++   -static, -assert, and -nostdlib. Dynamic loader control.  */
++#undef LINK_SPEC
++#define LINK_SPEC \
++   "%{G*} %{EB} %{EL} %{mips1} %{mips2} %{mips3} \
++   %{!shared:%{!nostdlib:%{!r:%{!e*:-e __start}}}} \
++   %{shared:-shared} %{R*} \
++   %{static:-Bstatic} \
++   %{!static:-Bdynamic} \
++   %{assert*} \
++   -dynamic-linker /usr/libexec/ld.so"
++
++/* -G is incompatible with -KPIC which is the default, so only allow objects
++   in the small data section if the user explicitly asks for it.  */
++#undef MIPS_DEFAULT_GVALUE
++#define MIPS_DEFAULT_GVALUE 0
++
++
++/* Since gas are standard on OpenBSD, we don't need these.  */
++#undef ASM_FINAL_SPEC
++
++/* As an elf system, we need crtbegin/crtend stuff.  */
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "\
++	%{!shared: %{pg:gcrt0%O%s} %{!pg:%{p:gcrt0%O%s} \
++	%{!p:%{!static:crt0%O%s} %{static:%{nopie:crt0%O%s} \
++	%{!nopie:rcrt0%O%s}}}} crtbegin%O%s -lc} %{shared:crtbeginS%O%s}"
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC "%{!shared:-lc -lgcc crtend%O%s} %{shared:crtendS%O%s}"
++
++
++/* Switch into a generic section.  */
++#undef TARGET_ASM_NAMED_SECTION
++#define TARGET_ASM_NAMED_SECTION  default_elf_asm_named_section
++
++
++#undef STANDARD_STARTFILE_PREFIX_1
++#undef STANDARD_STARTFILE_PREFIX_2
+diff --git a/gcc/configure b/gcc/configure
+index c341ee12a8a..29aae673fda 100755
+--- a/gcc/configure
++++ b/gcc/configure
+@@ -13713,6 +13713,11 @@ if test x"$use_gcc_tgmath" = xyes
+ then extra_headers_list="${extra_headers_list} \$(srcdir)/ginclude/tgmath.h"
+ fi
+ 
++# If use_gcc_tgmath is set, append ginclude/tgmath.h.
++if test x"$use_gcc_stdatomic" = xyes
++then extra_headers_list="${extra_headers_list} \$(srcdir)/ginclude/stdatomic.h"
++fi
++
+ # Define collect2 in Makefile.
+ case $host_can_use_collect2 in
+   no) collect2= ;;
+diff --git a/gcc/configure.ac b/gcc/configure.ac
+index 46e58a27661..153adeaf549 100644
+--- a/gcc/configure.ac
++++ b/gcc/configure.ac
+@@ -2554,6 +2554,11 @@ if test x"$use_gcc_tgmath" = xyes
+ then extra_headers_list="${extra_headers_list} \$(srcdir)/ginclude/tgmath.h"
+ fi
+ 
++# If use_gcc_tgmath is set, append ginclude/tgmath.h.
++if test x"$use_gcc_stdatomic" = xyes
++then extra_headers_list="${extra_headers_list} \$(srcdir)/ginclude/stdatomic.h"
++fi
++
+ # Define collect2 in Makefile.
+ case $host_can_use_collect2 in
+   no) collect2= ;;
+diff --git a/libgcc/config.host b/libgcc/config.host
+index c94d69d84b7..441680e53af 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -1018,6 +1018,8 @@ mips*-*-linux*)				# Linux MIPS, either endian.
+ 	esac
+ 	md_unwind_header=mips/linux-unwind.h
+ 	;;
++mips*-*-openbsd*)
++	;;
+ mips*-sde-elf*)
+ 	tmake_file="$tmake_file mips/t-crtstuff mips/t-mips16"
+ 	case "${with_newlib}" in
